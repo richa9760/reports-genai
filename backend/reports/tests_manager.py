@@ -1,17 +1,31 @@
 from unittest import mock
 
 from django.urls import reverse
+from llmops.prompt_models import PromptVersion
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .models import MonthlyReport, ReportItem, ReportItemType
 from .services.llm_service import LLMConfigurationError, LLMResponseError
-from .services.manager_report_prompt import build_monthly_team_report_prompt
+from .services.manager_report_prompt import (
+    INSTRUCTIONS as MANAGER_MONTHLY_INSTRUCTIONS,
+    build_monthly_team_report_prompt,
+)
 from .services.quarterly_report_prompt import (
+    INSTRUCTIONS as MANAGER_QUARTERLY_INSTRUCTIONS,
     MONTH_NAMES,
     QUARTER_MONTHS,
     build_quarterly_team_report_prompt,
 )
+
+
+def create_active_prompt(feature, template, version="v1"):
+    return PromptVersion.objects.create(
+        feature=feature,
+        version=version,
+        prompt_template=template,
+        is_active=True,
+    )
 
 
 def make_report(employee_name, project_name, business_group, month, year, summary=""):
@@ -30,6 +44,10 @@ def make_item(report, item_type, content):
 
 
 class ManagerReportPromptTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        create_active_prompt("monthly_team_report", MANAGER_MONTHLY_INSTRUCTIONS)
+
     def setUp(self):
         self.richa = make_report(
             "Richa Verma", "AI Platform", "DC Engineering", 9, 2026, "Shipped auth."
@@ -42,7 +60,7 @@ class ManagerReportPromptTests(APITestCase):
     def test_prompt_includes_full_employee_report_data(self):
         report = MonthlyReport.objects.filter(pk=self.richa.pk).prefetch_related("items")
 
-        prompt = build_monthly_team_report_prompt(report, 9, 2026)
+        prompt, _ = build_monthly_team_report_prompt(report, 9, 2026)
 
         self.assertIn("Richa Verma", prompt)
         self.assertIn("AI Platform", prompt)
@@ -54,7 +72,7 @@ class ManagerReportPromptTests(APITestCase):
         self.assertIn("Year: 2026", prompt)
 
     def test_prompt_contains_do_not_invent_instructions(self):
-        prompt = build_monthly_team_report_prompt(
+        prompt, _ = build_monthly_team_report_prompt(
             MonthlyReport.objects.filter(pk=self.richa.pk), 9, 2026
         )
 
@@ -71,7 +89,7 @@ class ManagerReportPromptTests(APITestCase):
             self.assertIn(phrase, prompt)
 
     def test_prompt_contains_suggested_report_sections(self):
-        prompt = build_monthly_team_report_prompt(
+        prompt, _ = build_monthly_team_report_prompt(
             MonthlyReport.objects.filter(pk=self.richa.pk), 9, 2026
         )
 
@@ -86,7 +104,7 @@ class ManagerReportPromptTests(APITestCase):
             self.assertIn(section, prompt)
 
     def test_prompt_omits_item_sections_with_no_data(self):
-        prompt = build_monthly_team_report_prompt(
+        prompt, _ = build_monthly_team_report_prompt(
             MonthlyReport.objects.filter(pk=self.john.pk), 9, 2026
         )
 
@@ -95,6 +113,10 @@ class ManagerReportPromptTests(APITestCase):
 
 
 class ManagerReportApiTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        create_active_prompt("monthly_team_report", MANAGER_MONTHLY_INSTRUCTIONS)
+
     def url(self):
         return reverse("reports:manager-report-monthly-generate")
 
@@ -258,6 +280,10 @@ class QuarterMappingTests(APITestCase):
 
 
 class QuarterlyReportPromptTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        create_active_prompt("quarterly_team_report", MANAGER_QUARTERLY_INSTRUCTIONS)
+
     def setUp(self):
         self.richa = make_report(
             "Richa Verma", "AI Platform", "DC Engineering", 8, 2026, "Shipped auth."
@@ -268,7 +294,7 @@ class QuarterlyReportPromptTests(APITestCase):
         make_item(self.john, ReportItemType.COURSE, "AWS certification")
 
     def test_prompt_includes_quarter_year_and_months(self):
-        prompt = build_quarterly_team_report_prompt(
+        prompt, _ = build_quarterly_team_report_prompt(
             MonthlyReport.objects.all().prefetch_related("items"), 3, 2026
         )
 
@@ -279,7 +305,7 @@ class QuarterlyReportPromptTests(APITestCase):
         self.assertIn("September", prompt)
 
     def test_prompt_includes_full_employee_report_data(self):
-        prompt = build_quarterly_team_report_prompt(
+        prompt, _ = build_quarterly_team_report_prompt(
             MonthlyReport.objects.filter(pk=self.richa.pk).prefetch_related("items"), 3, 2026
         )
 
@@ -292,7 +318,7 @@ class QuarterlyReportPromptTests(APITestCase):
         self.assertIn(f"Month: {MONTH_NAMES[7]}", prompt)
 
     def test_prompt_contains_do_not_invent_instructions(self):
-        prompt = build_quarterly_team_report_prompt(
+        prompt, _ = build_quarterly_team_report_prompt(
             MonthlyReport.objects.filter(pk=self.richa.pk), 3, 2026
         )
 
@@ -310,7 +336,7 @@ class QuarterlyReportPromptTests(APITestCase):
             self.assertIn(phrase, prompt)
 
     def test_prompt_contains_suggested_report_sections(self):
-        prompt = build_quarterly_team_report_prompt(
+        prompt, _ = build_quarterly_team_report_prompt(
             MonthlyReport.objects.filter(pk=self.richa.pk), 3, 2026
         )
 
@@ -329,7 +355,7 @@ class QuarterlyReportPromptTests(APITestCase):
             self.assertIn(section, prompt)
 
     def test_prompt_omits_item_sections_with_no_data(self):
-        prompt = build_quarterly_team_report_prompt(
+        prompt, _ = build_quarterly_team_report_prompt(
             MonthlyReport.objects.filter(pk=self.john.pk), 3, 2026
         )
 
@@ -338,6 +364,10 @@ class QuarterlyReportPromptTests(APITestCase):
 
 
 class QuarterlyReportApiTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        create_active_prompt("quarterly_team_report", MANAGER_QUARTERLY_INSTRUCTIONS)
+
     def url(self):
         return reverse("reports:manager-report-quarterly-generate")
 
