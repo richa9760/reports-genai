@@ -1,0 +1,100 @@
+name: Reports CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend CI
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: reports_test
+          POSTGRES_USER: reports_user
+          POSTGRES_PASSWORD: reports_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U reports_user -d reports_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+
+    env:
+      POSTGRES_DB: reports_test
+      POSTGRES_USER: reports_user
+      POSTGRES_PASSWORD: reports_password
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+
+      DJANGO_SETTINGS_MODULE: config.settings
+
+      LLM_PROVIDER: test
+      LLM_MODEL: test-model
+      LLM_BASE_URL: http://127.0.0.1:9999
+      LLM_API_KEY: test-key
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Django system checks
+        run: |
+          python manage.py check
+
+      - name: Run LLMOps tests
+        run: |
+          python manage.py test reports.tests_llm --noinput
+
+  frontend:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build React application
+        run: npm run build
