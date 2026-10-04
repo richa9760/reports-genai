@@ -3,7 +3,7 @@ name: Reports CI
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
 
 jobs:
@@ -38,15 +38,17 @@ jobs:
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: 5432
 
-      REDIS_HOST: 127.0.0.1
-      REDIS_PORT: 6379
-
       DJANGO_SETTINGS_MODULE: config.settings
 
       LLM_PROVIDER: test
       LLM_MODEL: test-model
       LLM_BASE_URL: http://127.0.0.1:9999
       LLM_API_KEY: test-key
+
+      LLM_FALLBACK_PROVIDER: test-fallback
+      LLM_FALLBACK_MODEL: ""
+      LLM_FALLBACK_BASE_URL: ""
+      LLM_FALLBACK_API_KEY: ""
 
     defaults:
       run:
@@ -98,3 +100,80 @@ jobs:
 
       - name: Build React application
         run: npm run build
+
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - backend
+      - frontend
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/richa9760/reports-backend:latest
+            ghcr.io/richa9760/reports-backend:${{ github.sha }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/richa9760/reports-frontend:latest
+            ghcr.io/richa9760/reports-frontend:${{ github.sha }}
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /opt/reports/reports-genai
+
+            git pull origin main
+
+            export BACKEND_IMAGE=ghcr.io/richa9760/reports-backend:${{ github.sha }}
+            export FRONTEND_IMAGE=ghcr.io/richa9760/reports-frontend:${{ github.sha }}
+
+            docker compose \
+              --env-file .env.prod \
+              -f docker-compose.prod.yml \
+              pull
+
+            docker compose \
+              --env-file .env.prod \
+              -f docker-compose.prod.yml \
+              run --rm backend python manage.py migrate --noinput
+
+            docker compose \
+              --env-file .env.prod \
+              -f docker-compose.prod.yml \
+              up -d
+
+            docker compose \
+              --env-file .env.prod \
+              -f docker-compose.prod.yml \
+              ps
