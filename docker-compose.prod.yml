@@ -41,6 +41,7 @@ services:
       LLM_FALLBACK_API_KEY: ${LLM_FALLBACK_API_KEY}
 
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS}
 
     command: >
       sh -c "python manage.py migrate --noinput &&
