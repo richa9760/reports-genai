@@ -1,4 +1,9 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+// Local development: Django on http://localhost:8000.
+// Production builds: empty base, so requests stay same-origin (/api/...) and
+// are handled by the Nginx /api/ proxy. API paths already include the /api
+// prefix, so the base must NOT contain /api.
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? '' : 'http://localhost:8000')
 
 /** Error carrying the HTTP status and any field-level validation messages. */
 export class ApiError extends Error {
